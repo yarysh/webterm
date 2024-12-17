@@ -1,0 +1,17 @@
+{
+  "name": "webterm",
+  "version": "0.0.1",
+  "description": "",
+  "license": "MIT",
+  "author": "Andrey Yarysh",
+  "scripts": {
+    "buildCSS":  "esbuild ./node_modules/@xterm/xterm/css/xterm.css --bundle --minify --outfile=dist/webterm.css",
+    "buildJS": "esbuild ./src/webterm.js --bundle --platform=neutral --minify --outfile=dist/webterm.js",
+    "build": "npm run buildJS && npm run buildCSS"
+  },
+  "devDependencies": {
+    "@xterm/addon-fit": "0.11.0-beta.75",
+    "@xterm/xterm": "5.6.0-beta.75",
+    "esbuild": "0.24.2"
+  }
+}
