@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <title>WebTerm</title>
+    <link rel="stylesheet" href="../node_modules/@xterm/xterm/css/xterm.css" />
+    <style>
+        html, body {height: 100%; margin: 0;}
+        #webterm {height: 100%; width: 100%;}
+    </style>
+</head>
+<body>
+<div id="webterm"></div>
+<script type="module">
+    import {System} from "../src/system.js";
+    import {Apps} from "../src/apps/index.js";
+
+    System.PATH = Object.assign(System.PATH, Apps);
+
+    const [pid, _] = System.process.fork(0, "webterm", {
+        container: document.getElementById('webterm'),
+        conf: {
+            shell: {
+                greeting: 'Hello, world!',
+                prompt: '> ',
+                commands: {
+                    'echo': './echo.js',
+                },
+            },
+            xterm: {
+                cursorBlink: true,
+                cursorStyle: 'underline',
+            },
+        }
+    })
+
+    await System.process.exec(pid);
+    close();
+</script>
+</body>
+</html>
