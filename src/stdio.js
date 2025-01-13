@@ -2,68 +2,94 @@
  * TODO: check how concurrency works in js
 */
 export class StdIO {
-    static #offset = 8; // 4 bytes for read position, 4 bytes for write position
+    /** @type {Uint16Array} */
+    #arr;
+    #locked = false;
 
-    #littleEndian = true;
+    static #metaFields = {
+        lock: 0,
+        readPosition: 1,
+        writePosition: 2,
+    };
 
-    /** @type {DataView} */
-    #view;
-
-    get #readPos() {
-        return this.#view.getUint32(0, this.#littleEndian);
-    }
-    /** @param {number} value */
-    set #readPos(value) {
-        this.#view.setUint32(0, value, this.#littleEndian);
-    }
-
-    get #writePos() {
-        return this.#view.getUint32(4, this.#littleEndian);
-    }
-    /** @param {number} value */
-    set #writePos(value) {
-        this.#view.setUint32(4, value, this.#littleEndian);
-    }
-
-    /**
-     * @param {DataView} view
-     * @param {boolean} [littleEndian=true]
-     * @throws {Error} if view.byteLength is greater than uint32
-     * */
-    constructor(view, littleEndian = true) {
-        const minLength = 10; // 4 bytes for read position, 4 bytes for write position, 2 bytes for at least one character
-        const maxLength = 4294967295; // Uint32 max value
-        if (view.byteLength < minLength || view.byteLength > maxLength) {
-            throw new Error(`DataView byte length should be between ${minLength} and ${maxLength}`);
+    /** @param {Uint16Array} arr */
+    constructor(arr) {
+        const minLength = Object.keys(StdIO.#metaFields).length + 1; // all metaFields + at least one character
+        const maxLength = (64*1024) / arr.BYTES_PER_ELEMENT // 64KB of space for 32K elements
+        if (arr.length < minLength || arr.length > maxLength) {
+            throw new Error(`Array size should be between ${minLength} and ${maxLength}`);
         }
 
-        this.#view = view;
-        this.#littleEndian = littleEndian;
+        this.#arr = arr;
 
-        this.#readPos = StdIO.#offset;
-        this.#writePos = StdIO.#offset;
+        this.#lock();
+        this.#arr[StdIO.#metaFields.readPosition] = Object.keys(StdIO.#metaFields).length;
+        this.#arr[StdIO.#metaFields.writePosition] = Object.keys(StdIO.#metaFields).length;
+        this.#unlock();
+    }
+
+    #lock() {
+        if (this.#locked) {
+            throw new Error('Lock already acquired');
+        }
+
+        while (true) {
+            if (Atomics.load(this.#arr, StdIO.#metaFields.lock) === 0) {
+                if (Atomics.add(this.#arr, StdIO.#metaFields.lock, 1) === 0) {
+                    this.#locked = true;
+                    return;
+                } else {
+                    Atomics.sub(this.#arr, StdIO.#metaFields.lock, 1)
+                }
+            }
+        }
+    }
+
+    #unlock() {
+        if (!this.#locked) {
+            throw new Error('Lock not acquired');
+        }
+        while (Atomics.compareExchange(this.#arr, StdIO.#metaFields.lock, 1, 0) !== 1) {}
+        this.#locked = false;
+    }
+
+
+    endian() {
+        return ['BIG', 'LITTLE'][new Uint8Array(new Uint16Array([1]).buffer)[0]];
     }
 
     read() {
         throw new Error('Not implemented');
     }
 
-    /**
-     * @param {string} data
-     * @throws {Error} if not enough space
-     * */
+    /** @param {string} data */
     write(data) {
-        const nextWritePos = this.#writePos + data.length*2; // 2 bytes per character
+        this.#lock();
 
-        // TODO: replace with circular buffer
-        if (nextWritePos > this.#view.byteLength) {
-            throw new Error('DataView byte length exceeded');
+        let writePos = this.#arr[StdIO.#metaFields.writePosition];
+
+        const neededSpace = writePos + data.length;
+        if (neededSpace > this.#arr.length) {
+            // if not enough space, put data at the beginning of the buffer,
+            // but not further than read position for preventing overwriting unread data
+            const nextWritePos = Object.keys(StdIO.#metaFields).length + (neededSpace - this.#arr.length);
+            if (nextWritePos > this.#arr[StdIO.#metaFields.readPosition]) {
+                this.#unlock();
+                throw new Error('Not enough space in buffer to write data');
+            }
         }
 
         for (let i = 0; i < data.length; i++) {
-            this.#view.setUint16(this.#writePos + i*2, data.charCodeAt(i), this.#littleEndian);
+            if (writePos >= this.#arr.length) {
+                writePos = Object.keys(StdIO.#metaFields).length;
+            }
+
+            this.#arr[writePos] = data.charCodeAt(i);
+            writePos++;
         }
 
-        this.#writePos = nextWritePos;
+        this.#arr[StdIO.#metaFields.writePosition] = writePos;
+
+        this.#unlock();
     }
 }
