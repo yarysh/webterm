@@ -1,6 +1,3 @@
-/**
- * TODO: check how concurrency works in js
-*/
 export class StdIO {
     /** @type {Uint16Array} */
     #arr;
@@ -14,23 +11,28 @@ export class StdIO {
 
     /** @param {Uint16Array} arr */
     constructor(arr) {
-        const minLength = Object.keys(StdIO.#metaFields).length + 1; // all metaFields + at least one character
+        const metaFieldsCnt = Object.keys(StdIO.#metaFields).length;
+        const minLength = metaFieldsCnt + 1; // all metaFields + at least one character
         const maxLength = (64*1024) / arr.BYTES_PER_ELEMENT // 64KB of space for 32K elements
         if (arr.length < minLength || arr.length > maxLength) {
-            throw new Error(`Array size should be between ${minLength} and ${maxLength}`);
+            throw new Error(`array size should be between ${minLength} and ${maxLength}`);
         }
 
         this.#arr = arr;
 
         this.#lock();
-        this.#arr[StdIO.#metaFields.readPosition] = Object.keys(StdIO.#metaFields).length;
-        this.#arr[StdIO.#metaFields.writePosition] = Object.keys(StdIO.#metaFields).length;
+        if (Atomics.compareExchange(this.#arr, StdIO.#metaFields.readPosition, 0, metaFieldsCnt) !== 0) {
+            throw new Error('read position in initial array should be 0');
+        }
+        if (Atomics.compareExchange(this.#arr, StdIO.#metaFields.writePosition, 0, metaFieldsCnt) !== 0) {
+            throw new Error('write position in initial array should be 0');
+        }
         this.#unlock();
     }
 
     #lock() {
         if (this.#locked) {
-            throw new Error('Lock already acquired');
+            throw new Error('lock already acquired');
         }
 
         while (true) {
@@ -47,7 +49,7 @@ export class StdIO {
 
     #unlock() {
         if (!this.#locked) {
-            throw new Error('Lock not acquired');
+            throw new Error('lock not acquired');
         }
         while (Atomics.compareExchange(this.#arr, StdIO.#metaFields.lock, 1, 0) !== 1) {}
         this.#locked = false;
@@ -59,11 +61,13 @@ export class StdIO {
     }
 
     read() {
-        throw new Error('Not implemented');
+        throw new Error('not implemented');
     }
 
     /** @param {string} data */
     write(data) {
+        const metaFieldsCnt = Object.keys(StdIO.#metaFields).length;
+
         this.#lock();
 
         let writePos = this.#arr[StdIO.#metaFields.writePosition];
@@ -72,16 +76,16 @@ export class StdIO {
         if (neededSpace > this.#arr.length) {
             // if not enough space, put data at the beginning of the buffer,
             // but not further than read position for preventing overwriting unread data
-            const nextWritePos = Object.keys(StdIO.#metaFields).length + (neededSpace - this.#arr.length);
+            const nextWritePos = metaFieldsCnt + (neededSpace - this.#arr.length);
             if (nextWritePos > this.#arr[StdIO.#metaFields.readPosition]) {
                 this.#unlock();
-                throw new Error('Not enough space in buffer to write data');
+                throw new Error('not enough space in buffer to write data');
             }
         }
 
         for (let i = 0; i < data.length; i++) {
             if (writePos >= this.#arr.length) {
-                writePos = Object.keys(StdIO.#metaFields).length;
+                writePos = metaFieldsCnt;
             }
 
             this.#arr[writePos] = data.charCodeAt(i);
