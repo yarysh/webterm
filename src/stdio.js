@@ -21,13 +21,17 @@ export class StdIO {
         this.#arr = arr;
 
         this.#lock();
-        if (Atomics.compareExchange(this.#arr, StdIO.#metaFields.readPosition, 0, metaFieldsCnt) !== 0) {
-            throw new Error('read position in initial array should be 0');
+
+        try {
+            if (Atomics.compareExchange(this.#arr, StdIO.#metaFields.readPosition, 0, metaFieldsCnt) !== 0) {
+                throw new Error('read position in initial array should be 0');
+            }
+            if (Atomics.compareExchange(this.#arr, StdIO.#metaFields.writePosition, 0, metaFieldsCnt) !== 0) {
+                throw new Error('write position in initial array should be 0');
+            }
+        } finally {
+            this.#unlock();
         }
-        if (Atomics.compareExchange(this.#arr, StdIO.#metaFields.writePosition, 0, metaFieldsCnt) !== 0) {
-            throw new Error('write position in initial array should be 0');
-        }
-        this.#unlock();
     }
 
     #lock() {
@@ -61,7 +65,39 @@ export class StdIO {
     }
 
     read() {
-        throw new Error('not implemented');
+        this.#lock();
+
+        const readPos = this.#arr[StdIO.#metaFields.readPosition];
+        const writePos = this.#arr[StdIO.#metaFields.writePosition];
+
+        let data = '';
+
+        // initial position or everything was read
+        if (readPos === writePos) {
+            this.#unlock();
+            return data;
+        }
+
+        let parts;
+        if (readPos < writePos) {
+            // default case, when data is written sequentially
+            parts = [[readPos, writePos]];
+        } else {
+            // part of the data is written from the beginning of the buffer
+            parts = [[readPos, this.#arr.length], [Object.keys(StdIO.#metaFields).length, writePos]];
+        }
+
+        try {
+            for (const [from, to] of parts) {
+                data += new TextDecoder('utf-16').decode(this.#arr.slice(from, to));
+            }
+            this.#arr[StdIO.#metaFields.readPosition] = writePos;
+        }
+        finally {
+            this.#unlock()
+        }
+
+        return data;
     }
 
     /** @param {string} data */
@@ -75,9 +111,10 @@ export class StdIO {
         const neededSpace = writePos + data.length;
         if (neededSpace > this.#arr.length) {
             // if not enough space, put data at the beginning of the buffer,
-            // but not further than read position for preventing overwriting unread data
+            // but not further than read position - 1 for preventing overwriting unread data
+            // and aligning write and read positions
             const nextWritePos = metaFieldsCnt + (neededSpace - this.#arr.length);
-            if (nextWritePos > this.#arr[StdIO.#metaFields.readPosition]) {
+            if (nextWritePos > this.#arr[StdIO.#metaFields.readPosition]-1) {
                 this.#unlock();
                 throw new Error('not enough space in buffer to write data');
             }

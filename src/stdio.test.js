@@ -1,6 +1,12 @@
 import { StdIO } from './stdio';
 
 
+function testMetaFields(view, lock, readPos, writePos) {
+    expect(view.getUint16(0, true)).toBe(lock);     // lock
+    expect(view.getUint16(2, true)).toBe(readPos);  // read position
+    expect(view.getUint16(4, true)).toBe(writePos); // write position
+}
+
 describe('StdIO init', () => {
     test ('success', () => {
         const buffer = new SharedArrayBuffer((3+1)*2); // all metaFields + 1 char (2B per character)
@@ -8,11 +14,9 @@ describe('StdIO init', () => {
 
         new StdIO(arr);
 
-        const dataView = new DataView(buffer);
-        expect(dataView.getUint16(0, true)).toBe(0); // lock
-        expect(dataView.getUint16(2, true)).toBe(3); // read position
-        expect(dataView.getUint16(4, true)).toBe(3); // write position
-        expect(dataView.getUint16(6, true)).toBe(0); // first character
+        const view = new DataView(buffer);
+        testMetaFields(view, 0, 3, 3);
+        expect(view.getUint16(6, true)).toBe(0); // first character
     })
 
     test('error if array is too small', () => {
@@ -46,6 +50,84 @@ describe('StdIO init', () => {
     });
 });
 
+describe('StdIO data read', () => {
+    test('success when data written sequentially', () => {
+        const str = "Hello, world!❤️";
+        const buffer = new SharedArrayBuffer((3+str.length)*2); // all metaFields + str (2B per character)
+        const arr = new Uint16Array(buffer);
+
+        const view = new DataView(buffer);
+        for (let i = 0; i < str.length; i++) {
+            view.setUint16((3+i)*2, str.charCodeAt(i), true);
+        }
+
+        const stdio = new StdIO(arr)
+
+        arr[2] += str.length+1; // move write position
+
+        const got = stdio.read();
+        expect(got).toBe(str);
+
+        testMetaFields(view, 0, 3+str.length+1, 3+str.length+1);
+    });
+
+    test('success when part is written from the beginning', () => {
+        const str = "orld!❤️-Hello, w";
+        const buffer = new SharedArrayBuffer((3+str.length)*2); // all metaFields + str (2B per character)
+        const arr = new Uint16Array(buffer);
+
+        const view = new DataView(buffer);
+        for (let i = 0; i < str.length; i++) {
+            view.setUint16((3+i)*2, str.charCodeAt(i), true);
+        }
+
+        const stdio = new StdIO(arr);
+        arr[1] += 8; // move read position
+        arr[2] += 7; // move write position
+
+        const got = stdio.read();
+        const want = "Hello, world!❤️";
+        expect(got).toBe(want);
+
+        testMetaFields(view, 0, 3+7, 3+7);
+    });
+
+    test('success when nothing to read', () => {
+        const buffer = new SharedArrayBuffer((3+1)*2); // all metaFields + 1 char (2B per character)
+        const arr = new Uint16Array(buffer);
+
+        const stdio = new StdIO(arr);
+
+        const got = stdio.read();
+        const want = '';
+        expect(got).toBe(want);
+
+        const view = new DataView(buffer);
+        testMetaFields(view, 0, 3, 3);
+    });
+
+    test('success when everything has already been read, i.e read position == write position', () => {
+        const str = "Hello, world!❤️";
+        const buffer = new SharedArrayBuffer((3+str.length)*2); // all metaFields + str (2B per character)
+        const arr = new Uint16Array(buffer);
+
+        const view = new DataView(buffer);
+        for (let i = 0; i < str.length; i++) {
+            view.setUint16((3+i)*2, str.charCodeAt(i), true);
+        }
+
+        const stdio = new StdIO(arr);
+        arr[1] += 7; // move read position
+        arr[2] += 7; // move write position
+
+        const got = stdio.read();
+        const want = '';
+        expect(got).toBe(want);
+
+        testMetaFields(view, 0, 3+7, 3+7);
+    });
+});
+
 describe('StdIO data write', () => {
     test('success when enough space', () => {
         const str = "Hello, world!❤️";
@@ -54,40 +136,28 @@ describe('StdIO data write', () => {
 
         new StdIO(arr).write(str);
 
-        const dataView = new DataView(buffer);
-        expect(dataView.getUint16(0, true)).toBe(0); // lock
-        expect(dataView.getUint16(2, true)).toBe(3); // read position
-        expect(dataView.getUint16(4, true)).toBe(3+str.length); // write position
+        const view = new DataView(buffer);
+        testMetaFields(view, 0, 3, 3+str.length);
 
-        let got = '';
-        for (let i = 0; i < str.length; i++) {
-            got += String.fromCharCode(dataView.getUint16(3*2+i*2, true));
-        }
-
+        const got = new TextDecoder('utf-16').decode(view.buffer.slice(6))
         expect(got).toBe(str);
     });
 
     test('success when part is written from the beginning', () => {
         const str = "Hello, world!❤️";
-        const buffer = new SharedArrayBuffer((3+str.length)*2); // all metaFields + str (2B per character)
+        const buffer = new SharedArrayBuffer((3+str.length+1)*2); // all metaFields + str (2B per character) + 1 char as padding
         const arr = new Uint16Array(buffer);
 
         const stdio = new StdIO(arr);
-        stdio.write("-------");
-        arr[1] += 7; // move read position to the end of the written data
+        stdio.write("--------");
+        arr[1] += 8; // move read position to the end of the written data
         stdio.write("Hello, world!❤️");
 
-        const dataView = new DataView(buffer);
-        expect(dataView.getUint16(0, true)).toBe(0); // lock
-        expect(dataView.getUint16(2, true)).toBe(10); // read position
-        expect(dataView.getUint16(4, true)).toBe(3+7); // write position
+        const view = new DataView(buffer);
+        testMetaFields(view, 0, 11, 3+7);
 
-        let got = '';
-        for (let i = 0; i < str.length; i++) {
-            got += String.fromCharCode(dataView.getUint16(6+i*2, true));
-        }
-        const want = "orld!❤️Hello, w";
-
+        const got = new TextDecoder('utf-16').decode(view.buffer.slice(6))
+        const want = "orld!❤️-Hello, w";
         expect(got).toBe(want);
     });
 
@@ -98,7 +168,7 @@ describe('StdIO data write', () => {
 
         const stdio = new StdIO(arr);
         stdio.write("-------");
-        arr[1] += 6; // move read position to prevent writing from the beginning
+        arr[1] += 7; // move read position to prevent writing from the beginning
 
         expect(() => stdio.write("Hello, world!❤️")).toThrowError("not enough space in buffer to write data");
     });
@@ -112,73 +182,4 @@ describe('StdIO data write', () => {
     });
 });
 
-describe('StdIO data read', () => {
-    test('success when data written sequentially', () => {
-        const str = "Hello, world!❤️";
-        const buffer = new SharedArrayBuffer((3+str.length)*2); // all metaFields + str (2B per character)
-        const arr = new Uint16Array(buffer);
-
-        const dataView = new DataView(buffer);
-        for (let i = 0; i < str.length; i++) {
-            dataView.setUint16((3+i)*2, str.charCodeAt(i), true);
-        }
-
-        new StdIO(arr);
-
-        const got = new StdIO(arr).read();
-
-        expect(got).toBe(str);
-    });
-
-    test('success when part is written from the beginning', () => {
-        const str = "orld!❤️Hello, w";
-        const buffer = new SharedArrayBuffer((3+str.length)*2); // all metaFields + str (2B per character)
-        const arr = new Uint16Array(buffer);
-
-        const dataView = new DataView(buffer);
-        for (let i = 0; i < str.length; i++) {
-            dataView.setUint16((3+i)*2, str.charCodeAt(i), true);
-        }
-
-        new StdIO(arr);
-        arr[1] += 7; // move read position
-        arr[2] = 10; // move write position
-
-        const got = new StdIO(arr).read();
-        const want = "Hello, world!❤️";
-
-        expect(got).toBe(want);
-    });
-
-    test('success when nothing to read', () => {
-        const buffer = new SharedArrayBuffer((3+1)*2); // all metaFields + 1 char (2B per character)
-        const arr = new Uint16Array(buffer);
-
-        new StdIO(arr);
-
-        const got = new StdIO(arr).read();
-        const want = '';
-
-        expect(got).toBe(want);
-    });
-
-    test('success when everything has already been read, i.e read position == write position', () => {
-        const str = "Hello, world!❤️";
-        const buffer = new SharedArrayBuffer((3+str.length)*2); // all metaFields + str (2B per character)
-        const arr = new Uint16Array(buffer);
-
-        const dataView = new DataView(buffer);
-        for (let i = 0; i < str.length; i++) {
-            dataView.setUint16((3+i)*2, str.charCodeAt(i), true);
-        }
-
-        new StdIO(arr);
-        arr[1] += 7; // move read position
-        arr[2] += 7; // move write position
-
-        const got = new StdIO(arr).read();
-        const want = '';
-
-        expect(got).toBe(want);
-    });
-});
+describe('StdIO read/write', () => {});
