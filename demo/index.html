@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <title>WebTerm</title>
+    <link rel="stylesheet" href="../node_modules/@xterm/xterm/css/xterm.css" />
+    <style>
+        html, body {height: 100%; margin: 0;}
+        #webterm {height: 100%; width: 100%;}
+    </style>
+</head>
+<body>
+<div id="webterm"></div>
+<script type="module">
+    import {Webterm} from "../src/webterm.js";
+    new Webterm(
+        document.getElementById('webterm'),
+        {
+            shell: {
+                greeting: 'Hello, world!',
+                prompt: '> ',
+                commands: {
+                    'echo': './echo.js',
+                },
+            },
+            xterm: {
+                cursorBlink: true,
+                cursorStyle: 'underline',
+            },
+        }
+    ).start();
+</script>
+</body>
+</html>

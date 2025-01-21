@@ -1,4 +1,4 @@
-import { StdIO } from './stdio';
+import { StdIO } from './stdio.js';
 
 
 function testMetaFields(view, lock, readPos, writePos) {
@@ -181,5 +181,3 @@ describe('StdIO data write', () => {
         expect(() => stdio.write("Hello, world!❤️")).toThrowError("not enough space in buffer to write data");
     });
 });
-
-describe('StdIO read/write', () => {});

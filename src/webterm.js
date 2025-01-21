@@ -1,106 +1,123 @@
-'use strict';
+/**
+ * TODO:
+ * - check compatibility
+ * - set interval instead of infinite loop
+ */
 
 import {Terminal} from '../node_modules/@xterm/xterm/lib/xterm.mjs';
 import {FitAddon} from '../node_modules/@xterm/addon-fit/lib/addon-fit.mjs'
 
+import {Process} from "./process.js";
+import {Shell} from './shell.js';
+import {Keyboard} from "./system.js";
 
-const KEY = {
-    BACKSPACE: '\u007F',
-    CTRL_A:    '\u0001',
-    CTRL_B:    '\u0002',
-    CTRL_C:    '\u0003',
-    CTRL_E:    '\u0005',
-    CTRL_F:    '\u0006',
-    DEL:       '\u001b[3~',
-    ENTER:     '\r',
-    L_ARROW:   '\u001b[D',
-    R_ARROW:   '\u001b[C',
-}
 
-export class Webterm {
+export class Webterm extends Process {
     /** @type {Object} */
     #conf;
+
+    /** @type {HTMLElement} */
+    #container;
+
     /** @type {Terminal} */
     #xterm;
 
-    /** @param {Object} conf */
-    constructor(conf={}) {
-        this.#conf = conf;
-        this.#conf.prompt = this.#conf.prompt || '$ ';
+    /** @type {Shell} */
+    #shell;
 
+    /** @type {number} */
+    #shellOffsetX;
+
+    /**
+     * @param {HTMLElement} container
+     * @param {Object} conf
+     */
+    constructor(container, conf={}) {
+        super(null, 'webterm', []);
+
+        this.#container = container;
+        this.#conf = conf;
         this.#xterm = new Terminal(this.#conf.xterm);
+        this.#shell = new Shell(this.#conf.shell);
     };
 
-    /** @param {HTMLElement} elem */
-    init(elem) {
-        this.#xterm.open(elem);
+    _start() {
+        this.#xterm.open(this.#container);
+        this.#xterm.onData(this.#onData.bind(this));
 
         const fitAddon = new FitAddon();
         this.#xterm.loadAddon(fitAddon);
         window.addEventListener('resize', () => fitAddon.fit());
         fitAddon.fit();
 
-        this.#xterm.onData(this.#onData.bind(this));
+        this.#shell.onOutput(data => {
+            this.#shellOffsetX = data.split('\n').pop().length;
+            this.#xterm.write(data);
+        });
 
-        if (this.#conf.greeting && this.#conf.greeting.length) {
-            this.#xterm.writeln(this.#conf.greeting);
-        }
-        this.#xterm.write(this.#conf.prompt);
+        this.#shell.start();
+
         this.#xterm.focus();
+    }
+
+    _stop() {
+        this.#shell.stop();
     }
 
     /**
      * @param {IBuffer} buffer
      * @returns {string}
      */
-    #content(buffer) {
+    #getCurrentLine(buffer) {
         return buffer.getLine(buffer.cursorY).translateToString(true);
     }
 
     /** @param {string} data */
     #onData(data) {
         const buffer = this.#xterm.buffer.normal;
-        const prompt = this.#conf.prompt;
 
         switch (data) {
-            case KEY.ENTER:
-                this.#xterm.write(`\r\n${prompt}`);
+            case Keyboard.ENTER:
+                const line = this.#getCurrentLine(buffer).substring(this.#shellOffsetX).trim();
+                this.#xterm.write(`\r\n`);
+                this.#shell.invoke(line);
                 break;
 
-            case KEY.BACKSPACE:
-                if (buffer.cursorX > prompt.length) this.#xterm.write('\b\x1B[P');
+            case Keyboard.BACKSPACE:
+                if (buffer.cursorX > this.#shellOffsetX) this.#xterm.write('\b\x1B[P');
                 break;
 
-            case KEY.DEL:
-                if (buffer.cursorX < this.#content(buffer).length) this.#xterm.write('\x1B[P');
+            case Keyboard.DEL:
+                if (buffer.cursorX < this.#getCurrentLine(buffer).length) this.#xterm.write('\x1B[P');
                 break;
 
-            case KEY.CTRL_A:
-                this.#xterm.write(`\x1B[${prompt.length+1}G`);
+            case Keyboard.CTRL_A:
+                this.#xterm.write(`\x1B[${this.#shellOffsetX+1}G`);
                 break;
 
-            case KEY.CTRL_C:
-                this.#xterm.write(`^C\r\n${prompt}`);
+            case Keyboard.CTRL_C:
+                this.#xterm.write(`^C\r\n`);
+                this.#shell.abort();
                 break;
 
-            case KEY.CTRL_E:
-                this.#xterm.write(`\x1B[${this.#content(buffer).length+1}G`);
+            case Keyboard.CTRL_E:
+                this.#xterm.write(`\x1B[${this.#getCurrentLine(buffer).length+1}G`);
                 break;
 
-            case KEY.CTRL_F:
-            case KEY.R_ARROW:
-                if (buffer.cursorX + 1 <= this.#content(buffer).length) this.#xterm.write(KEY.R_ARROW);
+            case Keyboard.CTRL_F:
+            case Keyboard.R_ARROW:
+                if (buffer.cursorX + 1 <= this.#getCurrentLine(buffer).length) this.#xterm.write(Keyboard.R_ARROW);
                 break;
 
-            case KEY.CTRL_B:
-            case KEY.L_ARROW:
-                if (buffer.cursorX - 1 >= prompt.length) this.#xterm.write(KEY.L_ARROW);
+            case Keyboard.CTRL_B:
+            case Keyboard.L_ARROW:
+                if (buffer.cursorX - 1 >= this.#shellOffsetX) this.#xterm.write(Keyboard.L_ARROW);
                 break;
 
             default:
                 if (data < " " || data > "~" && data < '\u00a0') break;
 
-                const content = this.#content(buffer);
+                const content = this.#getCurrentLine(buffer);
                 const cursor = buffer.cursorX;
 
                 if (cursor === content.length) {

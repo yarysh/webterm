@@ -9,7 +9,10 @@ export class StdIO {
         writePosition: 2,
     };
 
-    /** @param {Uint16Array} arr */
+    /**
+     * @param {Uint16Array} arr
+     * @throws {Error}
+     */
     constructor(arr) {
         const metaFieldsCnt = Object.keys(StdIO.#metaFields).length;
         const minLength = metaFieldsCnt + 1; // all metaFields + at least one character
@@ -34,6 +37,7 @@ export class StdIO {
         }
     }
 
+    /** @throws {Error} */
     #lock() {
         if (this.#locked) {
             throw new Error('lock already acquired');
@@ -51,6 +55,7 @@ export class StdIO {
         }
     }
 
+    /** @throws {Error} */
     #unlock() {
         if (!this.#locked) {
             throw new Error('lock not acquired');
@@ -59,11 +64,9 @@ export class StdIO {
         this.#locked = false;
     }
 
-
-    endian() {
-        return ['BIG', 'LITTLE'][new Uint8Array(new Uint16Array([1]).buffer)[0]];
-    }
-
+    /** @returns {string}
+     *  @throws {Error}
+     */
     read() {
         this.#lock();
 
@@ -100,7 +103,9 @@ export class StdIO {
         return data;
     }
 
-    /** @param {string} data */
+    /** @param {string} data
+     *  @throws {Error}
+     */
     write(data) {
         const metaFieldsCnt = Object.keys(StdIO.#metaFields).length;
 
