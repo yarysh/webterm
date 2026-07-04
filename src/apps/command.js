@@ -1,4 +1,6 @@
-export class Worker {
+import {BaseProcess, System} from "../system.js";
+
+export class Command extends BaseProcess {
     /* @type {number} */
     #ppid;
 
@@ -11,18 +13,21 @@ export class Worker {
     /* @type {number} */
     #pid;
 
-    /* @type {Worker} */
+    /* @type {Command} */
     #process;
 
     /**
      *  @param {number} ppid
-     *  @param {string} cmd
      *  @param {string[]} args
      */
-    constructor(ppid, cmd, args) {
+    constructor(ppid, args) {
+        super(ppid, args);
+
         this.#ppid = ppid;
-        this.#cmd = cmd;
-        this.#args = args;
+        this.#cmd = args[0];
+        console.log("Command args:", args, Array.isArray(args));
+
+        this.#args = args.slice(1);
     }
 
     /**

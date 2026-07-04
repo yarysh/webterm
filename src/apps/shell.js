@@ -87,10 +87,17 @@ export class Shell extends BaseProcess {
 
         const cmd = args[0];
         switch (cmd) {
-            case "exit": {
+            case "exit":
                 this.exit(System.SIGNAL.SIGTERM);
                 return;
-            }
+            default:
+                const scriptURL = this.#conf.commands[cmd];
+                if (scriptURL == null) break;
+
+                let [pid, io] = System.process.fork(this.pid, "command", [scriptURL, args.slice(1)]);
+                System.process.exec(pid);
+
+                return;
         }
 
         this.stdout.write(`shell: ${cmd}: command not found\r\n${this.#conf.prompt}`);
