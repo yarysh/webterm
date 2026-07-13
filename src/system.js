@@ -180,7 +180,7 @@ function initStdIOs() {
     // First third of the buffer will be used for stdin
     // Second third for stdout
     // Last third for stderr
-    const buffer = new ArrayBuffer(System.PROCESS_BUFFER_BYTES)
+    const buffer = new SharedArrayBuffer(System.PROCESS_BUFFER_BYTES)
     let oneThird = Math.floor(
         (Math.floor(buffer.byteLength/3) / Uint16Array.BYTES_PER_ELEMENT)
     ) * Uint16Array.BYTES_PER_ELEMENT;

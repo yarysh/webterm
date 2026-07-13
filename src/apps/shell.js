@@ -94,8 +94,15 @@ export class Shell extends BaseProcess {
                 const scriptURL = this.#conf.commands[cmd];
                 if (scriptURL == null) break;
 
-                let [pid, io] = System.process.fork(this.pid, "command", [scriptURL, args.slice(1)]);
+                let [pid, commandIO] = System.process.fork(this.pid, "command", [scriptURL, args.slice(1)]);
+                commandIO[1].onData((e) => {
+                    console.log(e);
+                    this.stdout.write(commandIO[1].read());
+                })
+
                 System.process.exec(pid);
+
+
 
                 return;
         }

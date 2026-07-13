@@ -25,19 +25,21 @@ export class Command extends BaseProcess {
 
         this.#ppid = ppid;
         this.#cmd = args[0];
-        console.log("Command args:", args, Array.isArray(args));
-
         this.#args = args.slice(1);
     }
 
     /**
      *  @param {number} pid
+     *  @param {StdIOs} stdIOs
      *  @returns Promise
      */
-    exec(pid, fd) {
+    exec(pid, stdIOs) {
+        super.exec(pid, stdIOs);
+
         this.#pid = pid;
         this.#process = new Worker(this.#cmd, {type: 'module'});
-        this.#process.postMessage({'type': 'exec', 'args': this.#args});
+        this.#process.postMessage({'type': 'exec', 'stdIOs': stdIOs, 'args': this.#args});
+
         return new Promise((resolve) => {
             this.#process.onmessage = (event) => {
                 if (event.data.type !== 'completed') return;
@@ -52,6 +54,8 @@ export class Command extends BaseProcess {
      * @returns {number} status
      */
     exit(signal) {
+        super.exit(signal);
+
         this.#cleanup();
         return -1;
     }
