@@ -59,7 +59,6 @@ export class Shell extends BaseProcess {
     }
 
     /**
-     * TODO - test 
      * @param {string} line
      * @returns {Array.<string>}
      */
